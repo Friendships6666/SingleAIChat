@@ -20,9 +20,3 @@ npm run check
 npm test
 npm run build
 ```
-
-推送到 `main` 后，GitHub Actions 会运行 `npm run build:pages` 并发布 `dist`。首次部署需在仓库的 **Settings → Pages** 中将发布来源设为 **GitHub Actions**。
-
-站点地址：<https://friendships6666.github.io/SingleAIChat/>。
-
-不要将共用 API 密钥写入前端源码。Typst 预览首次运行需要下载较大的浏览器编译器；HTML/SVG 预览允许加载外部资源，但脚本仍在隔离的 iframe 中运行。
