@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.svelte-kit/
+coverage/
+
+.env.local
+.env.*.local
+*.log
+.DS_Store
