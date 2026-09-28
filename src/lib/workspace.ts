@@ -3,8 +3,8 @@ import type { Config, Content, MessageNode, ReasoningEffort, Role, Session, Work
 const CONFIG_KEY = 'stupidchat_config';
 const HISTORY_KEY = 'stupidchat_history';
 const WORKSPACE_KEY = 'stupidchat_workspace_v1';
-const STORAGE_LIMIT = 4 * 1024 * 1024;
-const MESSAGE_LIMIT = 48000;
+const TRUNCATED_CONTENT = '[内容过长，已在本地历史中截断]';
+const MISSING_IMAGE = '[图片附件仅在当前会话中可用]';
 
 function readJson<T>(key: string, fallback: T): T {
   try { return JSON.parse(localStorage.getItem(key) || 'null') || fallback; }
@@ -34,7 +34,7 @@ export function loadWorkspace(): Workspace {
 export function loadConfig(): Config {
   const config = { baseUrl: '', apiKey: '', model: '', systemPrompt: '', temperature: 0.7,
     reasoningEffort: 'medium' as ReasoningEffort, ...readJson<Partial<Config>>(CONFIG_KEY, {}) };
-  if (!['low', 'medium', 'high', 'max'].includes(config.reasoningEffort)) config.reasoningEffort = 'medium';
+  if (typeof config.reasoningEffort !== 'string' || !config.reasoningEffort.trim()) config.reasoningEffort = 'medium';
   return config;
 }
 export function saveConfig(config: Config): void { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); }
@@ -59,6 +59,19 @@ export function nodePath(session: Session): MessageNode[] {
   }
   return path;
 }
+export function buildRequestMessages(session: Session, systemPrompt: string): { role: Role | 'system'; content: Content }[] {
+  const messages: { role: Role | 'system'; content: Content }[] = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push(...nodePath(session).map(node => ({ role: node.role, content: node.content })));
+  return messages;
+}
+export function hasIncompleteHistory(session: Session): boolean {
+  return nodePath(session).some(node => {
+    const parts = typeof node.content === 'string' ? [node.content] : node.content
+      .filter(part => part.type === 'text').map(part => part.text);
+    return parts.some(text => text.includes(TRUNCATED_CONTENT) || text === MISSING_IMAGE);
+  });
+}
 export function addNode(session: Session, role: Role, content: Content): MessageNode {
   const node: MessageNode = { id: createId(), parentId: session.activeNodeId, role, content, createdAt: Date.now() };
   session.nodes.push(node);
@@ -70,42 +83,15 @@ export function addNode(session: Session, role: Role, content: Content): Message
   }
   return node;
 }
-function storedContent(content: Content): Content {
-  const truncate = (text: string) => text.length <= MESSAGE_LIMIT ? text :
-    `${text.slice(0, MESSAGE_LIMIT / 2)}\n\n[内容过长，已在本地历史中截断]\n\n${text.slice(-MESSAGE_LIMIT / 2)}`;
-  if (typeof content === 'string') return truncate(content);
-  return content.map(part => part.type === 'text'
-    ? { type: 'text' as const, text: truncate(part.text) }
-    : { type: 'text' as const, text: '[图片附件仅在当前会话中可用]' });
-}
-export function storableWorkspace(workspace: Workspace): Workspace {
-  return { version: 1, activeSessionId: workspace.activeSessionId,
-    sessions: workspace.sessions.map(session => ({ ...session,
-      nodes: session.nodes.map(node => ({ ...node, content: storedContent(node.content) })) })) };
-}
 export function saveWorkspace(workspace: Workspace): boolean {
-  const stored = storableWorkspace(workspace);
-  let serialized = JSON.stringify(stored);
-  while (new Blob([serialized]).size > STORAGE_LIMIT && stored.sessions.length > 1) {
-    const oldest = stored.sessions.filter(s => s.id !== stored.activeSessionId).sort((a, b) => a.updatedAt - b.updatedAt)[0];
-    if (!oldest) break;
-    stored.sessions = stored.sessions.filter(s => s.id !== oldest.id);
-    serialized = JSON.stringify(stored);
-  }
-  const current = activeSession(stored);
-  while (new Blob([serialized]).size > STORAGE_LIMIT && current.nodes.length > 1) {
-    current.nodes.shift();
-    if (current.nodes[0]) current.nodes[0].parentId = null;
-    serialized = JSON.stringify(stored);
-  }
   try {
-    localStorage.setItem(WORKSPACE_KEY, serialized);
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace));
     localStorage.removeItem(HISTORY_KEY);
     return true;
   } catch { return false; }
 }
 export function exportWorkspace(workspace: Workspace): void {
-  const data = { format: 'singleaichat-memory', version: 1, exportedAt: new Date().toISOString(), workspace: storableWorkspace(workspace) };
+  const data = { format: 'singleaichat-memory', version: 1, exportedAt: new Date().toISOString(), workspace };
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
   const link = document.createElement('a');
   link.href = url;
@@ -122,6 +108,7 @@ export async function importWorkspace(file: File, workspace: Workspace): Promise
   const sessions = source.sessions.map(old => {
     const ids = new Map(old.nodes.map(node => [node.id, createId()]));
     const session = createSession(String(old.title || '导入对话').slice(0, 80));
+    session.systemPrompt = typeof old.systemPrompt === 'string' ? old.systemPrompt : undefined;
     session.nodes = old.nodes.filter(node => node.role === 'user' || node.role === 'assistant').map(node => ({
       id: ids.get(node.id)!, parentId: node.parentId ? ids.get(node.parentId) || null : null,
       role: node.role, content: node.content, createdAt: Number(node.createdAt) || Date.now(),

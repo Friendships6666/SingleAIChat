@@ -9,7 +9,9 @@
     const baseUrl = draft.baseUrl.trim().replace(/\/+$/, '');
     const model = draft.model.trim();
     if (!baseUrl || !model) { alert('请至少填写 API Base URL 与模型名称！'); return; }
-    save({ ...draft, baseUrl, model, apiKey: draft.apiKey.trim(), systemPrompt: draft.systemPrompt.trim(), temperature: Number(draft.temperature) });
+    if (!draft.reasoningEffort.trim()) { alert('请填写思考程度！'); return; }
+    save({ ...draft, baseUrl, model, apiKey: draft.apiKey.trim(), systemPrompt: draft.systemPrompt.trim(),
+      reasoningEffort: draft.reasoningEffort.trim(), temperature: Number(draft.temperature) });
   }
 </script>
 
@@ -21,14 +23,10 @@
       <label>API Key<input type="password" bind:value={draft.apiKey} placeholder="sk-..." /></label>
       <label>模型名称 (Model) <span class="required">*</span><input bind:value={draft.model} placeholder="例如: deepseek-chat" required /></label>
       <label>System Prompt<textarea rows="3" bind:value={draft.systemPrompt} placeholder="系统指令..."></textarea></label>
-      <label>细考强度<select bind:value={draft.reasoningEffort}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select></label>
+      <label>思考程度<input list="reasoning-effort-options" bind:value={draft.reasoningEffort} placeholder="例如: ultra" required /></label>
+      <datalist id="reasoning-effort-options"><option value="low"></option><option value="medium"></option><option value="high"></option><option value="max"></option><option value="ultra"></option></datalist>
       <label>Temperature: <strong>{draft.temperature}</strong><input type="range" min="0" max="2" step="0.1" bind:value={draft.temperature} /></label>
       <button class="primary-button" type="submit">保存配置</button>
     </form>
   </div>
 </div>
-
-<style>
-  select { display: block; width: 100%; margin-top: .35rem; padding: .6rem .7rem; border: 1px solid #dfe5ef; border-radius: 5px; background: #f8fafc; color: #0f172a; font-size: 12px; }
-  select:focus { border-color: #4365cb; outline: 0; }
-</style>
